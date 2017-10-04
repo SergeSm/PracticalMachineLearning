@@ -5,26 +5,160 @@ date: "October 4, 2017"
 output: html_document
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+
+##Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+##Data
+
+The training data for this project are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har. If you use the document you create for this class for any purpose please cite them as they have been very generous in allowing their data to be used for this kind of assignment.
+
+##Goal
+
+The goal of your project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. You may use any of the other variables to predict with. You should create a report describing how you built your model, how you used cross validation, what you think the expected out of sample error is, and why you made the choices you did. You will also use your prediction model to predict 20 different test cases.
+
+
+##Loading Data
+
+```{r include=FALSE}
+library(caret)
+library(ggplot2)
+library(randomForest)
+library(rpart)
+library(rpart.plot)
+library(knitr)
 ```
 
-## R Markdown
+```{r}
+train_url <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+download.file(url=train_url, destfile="training.csv")
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+test_url <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+download.file(url=test_url, destfile="testing.csv")
 
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
-
-```{r cars}
-summary(cars)
+#read in training and testing data
+Training <- read.csv("training.csv", na.strings=c("NA","#DIV/0!",""))
+Testing  <- read.csv("testing.csv", na.strings=c("NA","#DIV/0!",""))
 ```
 
-## Including Plots
-
-You can also embed plots, for example:
-
-```{r pressure, echo=FALSE}
-plot(pressure)
+Distribution of the outcome column we want to predict:
+```{r}
+summary(Training$classe)#this is the outcome we want to predict
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+Partitioning the training data onto Training and Validation sets.
+
+```{r}
+inTrain <- createDataPartition(y=Training$classe, p=0.6, list=FALSE)
+Train <- Training[inTrain, ]
+Valid <- Training[-inTrain, ]
+
+dim(Train)
+dim(Valid)
+```
+
+
+##Cleaning Data
+
+First 7 columns are clearly not predictors
+```{r}
+Train <- Train[, 8:length(Train)]
+Valid <- Valid[, 8:length(Valid)]
+```
+
+Remove variables with near zero variance
+```{r}
+NZV <- nearZeroVar(Train)
+Train <- Train[, -NZV]
+Valid <- Valid[, -NZV]
+```
+
+Remove variables with more that 75% or NAs
+```{r}
+tmpNA <- sapply(Train, function(x) mean(is.na(x))) > 0.75
+Train <- Train[, tmpNA == F]
+Valid <- Valid[, tmpNA == F]
+```
+
+```{r}
+dim(Train)
+dim(Valid)
+```
+
+
+##Decision Trees model
+
+Bulid the model
+```{r}
+set.seed(12345)
+
+modelTree <- rpart(classe ~ ., data = Train, method = "class")
+# print(modelTree)
+prp(modelTree)
+```
+
+Cross validation on validation data
+```{r}
+predictTree <- predict(modelTree, Valid, type = "class")
+cm <- confusionMatrix(Valid$classe, predictTree)
+
+plot(cm$table, col = cm$classe, main = "Decision Tree Confusion Matrix")
+```
+
+Model accuracy and out of sample error
+```{r}
+cm$overall['Accuracy']
+```    
+
+So the out-of-sample error for this model is 27%.
+
+
+##Random Forest model
+
+Bulid the model
+```{r}
+set.seed(12345)
+
+modelRF <- randomForest(classe~., data = Train)
+#print(modelRF)
+```
+
+Cross validation on validation data
+```{r}
+predictRF <- predict(modelRF, Valid, type = "class")
+cm <- confusionMatrix(Valid$classe, predictRF)
+
+plot(cm$table, col = cm$classe, main = "Random Forest Confusion Matrix")
+```
+
+Model accuracy and out of sample error
+```{r}
+cm$overall['Accuracy']
+```    
+
+So the out-of-sample error for this model is 0.3%.
+
+
+##Model selection
+
+Out of sample error for our Random Forest model is just 0.3% which is very low so we will use this model on Testing dataset.
+
+
+## Run model against Testing data
+
+```{r}
+predictTest <- predict(modelRF, Testing, type = "class")
+print(predictTest)
+```
+
+
